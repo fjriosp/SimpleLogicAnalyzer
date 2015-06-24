@@ -1,8 +1,8 @@
 const uint16_t MAXCAP=2048;
 
 /*
-T=0 - 1855072 Hz
-T=1 -  618357 Hz
+T=0 - 1969230 Hz
+T=1 -  658097 Hz
 T=2 -  380386 Hz
 T=3 -  274604 Hz
 T=4 -  214720 Hz
@@ -10,6 +10,8 @@ T=5 -  176369 Hz
 */
 const uint16_t T=1;
 uint8_t data[MAXCAP];
+unsigned long rate=0;
+const uint8_t MASK = 0x30;
 
 void setup() {
   // Paint memory
@@ -20,9 +22,10 @@ void setup() {
   // Disable Analog Comparator
   ADCSRB &= ~(_BV(ACME));
 
-  // Set PF[7-4] as input with pullups
+  // Set PF[7-4] as input without pullups
   DDRF  &= 0x0F;
-  PORTF |= 0xF0;
+  //PORTF |= 0xF0;
+  PORTF &= ~(0xF0);
   
   // Initialize data
   for(int i=0; i<MAXCAP; i++)
@@ -95,6 +98,9 @@ inline void menu_loop() {
       case 's':
         menu_show();
         break;
+      case 'e':
+        menu_export();
+        break;
       default:
         Serial.print(F("Unknown command: "));
         Serial.println(cmd);
@@ -112,6 +118,7 @@ inline void menu_help() {
   Serial.println(F(" m Show mem stats"));
   Serial.println(F(" c Start capture data"));
   Serial.println(F(" s Show captured data"));
+  Serial.println(F(" e Export captured data"));
   Serial.println();
 }
 
@@ -140,44 +147,95 @@ inline void menu_mem() {
 }
 
 inline void menu_capture() {
-  uint8_t ini = (PINF & 0xF0);
+  uint8_t *p   = data;
+  uint8_t *last = data + MAXCAP - 1;
+  
+  while(p <= last) {
+    *p = 0;
+    p++;
+  }
+  p = data;
+  
+  *p = PINF;
   // Wait some change
-  while(ini == (PINF & 0xF0));
+  while((*p & MASK) == (PINF & MASK));
+  p++;
   
   unsigned long start = micros();
-  for(int i=0;i<MAXCAP;i++) {
-    data[i]  = 0;
-    // Read Low nibble
-    data[i] |= (PINF & 0xF0) >> 4;
+  while(p <= last) {
+    *p = PINF;
     _delay_us(T);
-    // Read High nibble
-    data[i] |= (PINF & 0xF0);
-     _delay_us(T);
+    p++;
   }
   unsigned long end = micros();
+  rate = (MAXCAP * 1000000) / (end - start);
+  
   Serial.print(F("Buffer filled in: "));
   Serial.print(end-start);
   Serial.println(F(" us"));
   Serial.print(F("Freq: "));
-  Serial.print((4096000000)/(end-start));
+  Serial.print(rate);
   Serial.println(F(" Hz"));
 }
 
-const char GRAPH[] = {'.','+'};
 const uint16_t LINESIZE = 64;
+const uint16_t NLINES = 2;
+const char GRAPH[] = {'.','+'};
 
 inline void menu_show() {
   int i=0;
   while(i<MAXCAP) {
     // Signal0
-    for(uint8_t s=0;s<4;s++) {
+    for(uint8_t s=0;s<NLINES;s++) {
       for(int j=0;j<LINESIZE;j++) {
-        Serial.print(GRAPH[(data[i+j]&(0x01 << s)) == 0 ? 0 : 1]);
         Serial.print(GRAPH[(data[i+j]&(0x10 << s)) == 0 ? 0 : 1]);
       }
       Serial.println();
     }
     i += LINESIZE;
     Serial.println();
+  }
+}
+
+inline void menu_export() {
+  int s=1;
+  int i=0;
+  uint8_t last = (data[0] & MASK);
+  while(i<MAXCAP) {
+    if(last != (data[i] & MASK)) {
+      last = (data[i] & MASK);
+      s++;
+    }
+    i++;
+  }
+  
+  Serial.print(F(";Size: "));
+  Serial.println(s);
+  Serial.print(F(";Rate: "));
+  Serial.println(rate);
+  Serial.println(F(";Channels: 2"));
+  Serial.println(F(";EnabledChannels: 15"));
+  Serial.println(F(";TriggerPosition: 8"));
+  Serial.println(F(";Compressed: true"));
+  Serial.print(F(";AbsoluteLength: "));
+  Serial.println(MAXCAP);
+  Serial.println(F(";CursorEnabled: true"));
+  
+  i=0;
+  last = (data[0] & MASK);
+  Serial.print(F("0000000"));
+  Serial.print(last>>4);
+  Serial.print(F("@"));
+  Serial.println(i);
+  
+  while(i<MAXCAP) {
+    if(last != (data[i] & MASK)) {
+      last = (data[i] & MASK);
+      Serial.print(F("0000000"));
+      Serial.print(last>>4);
+      Serial.print(F("@"));
+      Serial.println(i);
+    }
+    i++;
   }
 }
