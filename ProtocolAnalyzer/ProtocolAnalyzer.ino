@@ -11,7 +11,7 @@ T=5 -  176369 Hz
 const uint16_t T=1;
 uint8_t data[MAXCAP];
 unsigned long rate=0;
-const uint8_t MASK = 0x30;
+const uint8_t MASK = 0x03;
 
 void setup() {
   // Paint memory
@@ -146,32 +146,212 @@ inline void menu_mem() {
   Serial.println();
 }
 
-inline void menu_capture() {
-  uint8_t *p   = data;
-  uint8_t *last = data + MAXCAP - 1;
-  
-  while(p <= last) {
-    *p = 0;
-    p++;
-  }
-  p = data;
-  
-  *p = PINF;
-  // Wait some change
-  while((*p & MASK) == (PINF & MASK));
-  p++;
-  
+unsigned long capture_8() {
+  uint16_t cnt = MAXCAP - 1;
+  uint8_t  *p  = data+1;
   unsigned long start = micros();
-  while(p <= last) {
-    *p = PINF;
-    _delay_us(T);
-    p++;
-  }
+  asm volatile(
+    "in   r16, %[PF]      \n\t" // CK+1 = 1
+    "andi r16, 0xF0       \n\t" // CK+1 = 2
+    "swap r16             \n\t" // CK+1 = 3
+    "nop                  \n\t" // CK+1 = 4
+    "rjmp .+0             \n\t" // CK+2 = 6
+    "rjmp .+0             \n\t" // CK+2 = 8
+  
+    "cloop8:               \n\t"
+    
+    "in   r17, %[PF]      \n\t" // CK+1 = 1
+    "andi r17, 0xF0       \n\t" // CK+1 = 2
+    "or   r17, r16        \n\t" // CK+1 = 3
+    "st   x+,  r17        \n\t" // CK+2 = 5
+    "nop                  \n\t" // CK+1 = 6
+    "rjmp .+0             \n\t" // CK+2 = 8
+    
+    "in   r16, %[PF]      \n\t" // CK+1 = 1
+    "andi r16, 0xF0       \n\t" // CK+1 = 2
+    "swap r16             \n\t" // CK+1 = 3
+    "nop                  \n\t" // CK+1 = 4
+    
+    "sbiw %[CNT], 1       \n\t" // CK+2 = 6
+    "brne cloop8           \n\t" // CK+2 = 8
+    : 
+    : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
+      [CNT]  "w"  (cnt),
+      [DATA] "x"  (p)
+    : "r16","r17"
+  );
   unsigned long end = micros();
-  rate = (MAXCAP * 1000000) / (end - start);
+  return end-start;
+}
+
+unsigned long capture_16() {
+  uint16_t cnt = MAXCAP - 1;
+  uint8_t  *p  = data+1;
+  unsigned long start = micros();
+  asm volatile(
+    "in   r16, %[PF]      \n\t" // CK+1 = 1
+    "andi r16, 0xF0       \n\t" // CK+1 = 2
+    "swap r16             \n\t" // CK+1 = 3
+    
+    // 3*4 = 12 CK
+    "ldi  r18, 4          \n\t"
+    "dec  r18             \n\t"
+    "brne .-4             \n\t" // CK+12 = 15
+    "nop                  \n\t" // CK+1  = 16
+  
+    "cloop16:             \n\t"
+    
+    "in   r17, %[PF]      \n\t" // CK+1 = 1
+    "andi r17, 0xF0       \n\t" // CK+1 = 2
+    "or   r17, r16        \n\t" // CK+1 = 3
+    "st   x+,  r17        \n\t" // CK+2 = 5
+    
+    // 3*3 = 9 CK
+    "ldi  r18, 3          \n\t"
+    "dec  r18             \n\t"
+    "brne .-4             \n\t" // CK+9 = 14
+    "rjmp .+0             \n\t" // CK+2 = 16
+    
+    "in   r16, %[PF]      \n\t" // CK+1 = 1
+    "andi r16, 0xF0       \n\t" // CK+1 = 2
+    "swap r16             \n\t" // CK+1 = 3
+    
+    // 3*3 = 9 CK
+    "ldi  r18, 3          \n\t"
+    "dec  r18             \n\t"
+    "brne .-4             \n\t" // CK+9 = 12
+    
+    "sbiw %[CNT], 1       \n\t" // CK+2 = 14
+    "brne cloop16         \n\t" // CK+2 = 16
+    : 
+    : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
+      [CNT]  "w"  (cnt),
+      [DATA] "x"  (p)
+    : "r16","r17","r18"
+  );
+  unsigned long end = micros();
+  return end-start;
+}
+
+unsigned long capture_32() {
+  uint16_t cnt = MAXCAP - 1;
+  uint8_t  *p  = data+1;
+  unsigned long start = micros();
+  asm volatile(
+    "in   r16, %[PF]      \n\t" // CK+1 = 1
+    "andi r16, 0xF0       \n\t" // CK+1 = 2
+    "swap r16             \n\t" // CK+1 = 3
+    
+    // 3*9 = 27 CK
+    "ldi  r18, 9          \n\t"
+    "dec  r18             \n\t"
+    "brne .-4             \n\t" // CK+27 = 30
+    "rjmp .+0             \n\t" // CK+2  = 32
+    
+    "cloop32:             \n\t"
+    
+    "in   r17, %[PF]      \n\t" // CK+1 = 1
+    "andi r17, 0xF0       \n\t" // CK+1 = 2
+    "or   r17, r16        \n\t" // CK+1 = 3
+    "st   x+,  r17        \n\t" // CK+2 = 5
+    
+    // 3*9 = 27 CK
+    "ldi  r18, 9          \n\t"
+    "dec  r18             \n\t"
+    "brne .-4             \n\t" // CK+27 = 32
+    
+    "in   r16, %[PF]      \n\t" // CK+1 = 1
+    "andi r16, 0xF0       \n\t" // CK+1 = 2
+    "swap r16             \n\t" // CK+1 = 3
+    
+    // 3*8 = 24 CK
+    "ldi  r18, 8          \n\t"
+    "dec  r18             \n\t"
+    "brne .-4             \n\t" // CK+24 = 27
+    "nop                  \n\t" // CK+1  = 28
+    
+    "sbiw %[CNT], 1       \n\t" // CK+2 = 30
+    "brne cloop32         \n\t" // CK+2 = 32
+    : 
+    : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
+      [CNT]  "w"  (cnt),
+      [DATA] "x"  (p)
+    : "r16","r17","r18"
+  );
+  unsigned long end = micros();
+  return end-start;
+}
+
+unsigned long capture_64() {
+  uint16_t cnt = MAXCAP - 1;
+  uint8_t  *p  = data+1;
+  unsigned long start = micros();
+  asm volatile(
+    "in   r16, %[PF]      \n\t" // CK+1 = 1
+    "andi r16, 0xF0       \n\t" // CK+1 = 2
+    "swap r16             \n\t" // CK+1 = 3
+    
+    // 3*20 = 60 CK
+    "ldi  r18, 20         \n\t"
+    "dec  r18             \n\t"
+    "brne .-4             \n\t" // CK+60 = 63
+    "nop                  \n\t" // CK+1  = 64
+    
+    "cloop64:             \n\t"
+    
+    "in   r17, %[PF]      \n\t" // CK+1 = 1
+    "andi r17, 0xF0       \n\t" // CK+1 = 2
+    "or   r17, r16        \n\t" // CK+1 = 3
+    "st   x+,  r17        \n\t" // CK+2 = 5
+    
+    // 3*19 = 57 CK
+    "ldi  r18, 19         \n\t"
+    "dec  r18             \n\t"
+    "brne .-4             \n\t" // CK+57 = 62
+    "rjmp .+0             \n\t" // CK+2  = 64
+    
+    "in   r16, %[PF]      \n\t" // CK+1 = 1
+    "andi r16, 0xF0       \n\t" // CK+1 = 2
+    "swap r16             \n\t" // CK+1 = 3
+    
+    // 3*19 = 57 CK
+    "ldi  r18, 19         \n\t"
+    "dec  r18             \n\t"
+    "brne .-4             \n\t" // CK+57 = 60
+    
+    "sbiw %[CNT], 1       \n\t" // CK+2 = 62
+    "brne cloop64         \n\t" // CK+2 = 64
+    : 
+    : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
+      [CNT]  "w"  (cnt),
+      [DATA] "x"  (p)
+    : "r16","r17","r18"
+  );
+  unsigned long end = micros();
+  return end-start;
+}
+
+inline void menu_capture() {
+  data[0]  = PINF & 0xF0;
+  data[0] |= data[0] >> 4;
+
+  // Wait some change
+  while((data[0] & (MASK<<4)) == (PINF & (MASK<<4)));
+
+  unsigned long time;
+  cli();
+  time=capture_8(); // 2MHz
+  time=capture_16();// 1MHz
+  time=capture_32();// 500kHz
+  time=capture_64();// 250kHz
+  sei();
+  
+  Serial.println("END ASM");
+  
+  rate = (MAXCAP * 1000000) / time;
   
   Serial.print(F("Buffer filled in: "));
-  Serial.print(end-start);
+  Serial.print(time);
   Serial.println(F(" us"));
   Serial.print(F("Freq: "));
   Serial.print(rate);
@@ -188,6 +368,7 @@ inline void menu_show() {
     // Signal0
     for(uint8_t s=0;s<NLINES;s++) {
       for(int j=0;j<LINESIZE;j++) {
+        Serial.print(GRAPH[(data[i+j]&(0x01 << s)) == 0 ? 0 : 1]);
         Serial.print(GRAPH[(data[i+j]&(0x10 << s)) == 0 ? 0 : 1]);
       }
       Serial.println();
@@ -200,12 +381,19 @@ inline void menu_show() {
 inline void menu_export() {
   int s=1;
   int i=0;
+  int c=0;
   uint8_t last = (data[0] & MASK);
   while(i<MAXCAP) {
     if(last != (data[i] & MASK)) {
       last = (data[i] & MASK);
       s++;
     }
+    c++;
+    if(last != ((data[i]>>4) & MASK)) {
+      last = ((data[i]>>4) & MASK);
+      s++;
+    }
+    c++;
     i++;
   }
   
@@ -215,16 +403,16 @@ inline void menu_export() {
   Serial.println(rate);
   Serial.println(F(";Channels: 2"));
   Serial.println(F(";EnabledChannels: 15"));
-  Serial.println(F(";TriggerPosition: 8"));
+  Serial.println(F(";TriggerPosition: 0"));
   Serial.println(F(";Compressed: true"));
   Serial.print(F(";AbsoluteLength: "));
-  Serial.println(MAXCAP);
+  Serial.println(c);
   Serial.println(F(";CursorEnabled: true"));
   
-  i=0;
+  i=c=0;
   last = (data[0] & MASK);
   Serial.print(F("0000000"));
-  Serial.print(last>>4);
+  Serial.print(last);
   Serial.print(F("@"));
   Serial.println(i);
   
@@ -232,10 +420,19 @@ inline void menu_export() {
     if(last != (data[i] & MASK)) {
       last = (data[i] & MASK);
       Serial.print(F("0000000"));
-      Serial.print(last>>4);
+      Serial.print(last);
       Serial.print(F("@"));
-      Serial.println(i);
+      Serial.println(c);
     }
+    c++;
+    if(last != ((data[i]>>4) & MASK)) {
+      last = ((data[i]>>4) & MASK);
+      Serial.print(F("0000000"));
+      Serial.print(last);
+      Serial.print(F("@"));
+      Serial.println(c);
+    }
+    c++;
     i++;
   }
 }
