@@ -1,17 +1,10 @@
+// Data
 const uint16_t MAXCAP=2048;
-
-/*
-T=0 - 1969230 Hz
-T=1 -  658097 Hz
-T=2 -  380386 Hz
-T=3 -  274604 Hz
-T=4 -  214720 Hz
-T=5 -  176369 Hz
-*/
-const uint16_t T=1;
 uint8_t data[MAXCAP];
-unsigned long rate=0;
-const uint8_t MASK = 0x03;
+// Clock Divider
+uint8_t clk_div = 8;
+// Signal mask
+uint8_t mask = 0x03;
 
 void setup() {
   // Paint memory
@@ -85,9 +78,14 @@ uint16_t mem_unused() {
 inline void menu_loop() {
   while(Serial.available()) {
     char cmd = Serial.read();
+    Serial.println(cmd);
+
     switch(cmd) {
       case 'h':
         menu_help();
+        break;
+      case 'C':
+        menu_config();
         break;
       case 'm':
         menu_mem();
@@ -115,11 +113,130 @@ inline void menu_help() {
   Serial.println();
   Serial.println(F("Commands:"));
   Serial.println(F(" h Show this help"));
+  Serial.println(F(" C Configure"));
   Serial.println(F(" m Show mem stats"));
   Serial.println(F(" c Start capture data"));
   Serial.println(F(" s Show captured data"));
   Serial.println(F(" e Export captured data"));
   Serial.println();
+}
+
+inline void menu_config() {
+  char c;
+  do {
+    Serial.println();
+    Serial.println(F("Config Mode"));
+    Serial.println();
+    Serial.println(F("Parameters:"));
+    Serial.print(F(" r rate ["));
+    Serial.print(F_CPU/clk_div);
+    Serial.println(F("]"));
+    Serial.print(F(" m mask ["));
+    Serial.print((char)((mask & _BV(3)) ? 'x' : '-'));
+    Serial.print((char)((mask & _BV(2)) ? 'x' : '-'));
+    Serial.print((char)((mask & _BV(1)) ? 'x' : '-'));
+    Serial.print((char)((mask & _BV(0)) ? 'x' : '-'));
+    Serial.println(F("]"));
+    Serial.println(F(" q exit ConfigMode"));
+    Serial.println();
+    Serial.print(F("Option: "));
+
+    c = Serial.read();
+    Serial.println(c);
+
+    switch(c) {
+      case 'r':
+        menu_config_rate();
+      break;
+      case 'm':
+        menu_config_mask();
+      break;
+      case 'q': // Will exit
+      break;
+      default:
+        Serial.print(F("Unknown option: "));
+        Serial.println(c);
+      break;
+    }
+  } while(c!='q');
+}
+
+inline void menu_config_rate() {
+  char c;
+  Serial.println();
+  Serial.println(F("Config Rate"));
+  Serial.println();
+  Serial.println(F("Available rates:"));
+  Serial.print(F(" 0 F_CPU/8  ["));
+  Serial.print(F_CPU/8);
+  Serial.println(F("]"));
+  Serial.print(F(" 1 F_CPU/16 ["));
+  Serial.print(F_CPU/16);
+  Serial.println(F("]"));
+  Serial.print(F(" 2 F_CPU/32 ["));
+  Serial.print(F_CPU/32);
+  Serial.println(F("]"));
+  Serial.print(F(" 3 F_CPU/64 ["));
+  Serial.print(F_CPU/64);
+  Serial.println(F("]"));
+  Serial.println();
+  Serial.print(F("Rate: "));
+
+  c = Serial.read();
+  Serial.println(c);
+
+  switch(c) {
+    case '0':
+      clk_div = 8;
+    break;
+    case '1':
+      clk_div = 16;
+    break;
+    case '2':
+      clk_div = 32;
+    break;
+    case '3':
+      clk_div = 64;
+    break;
+    default:
+      Serial.print(F("Unknown Rate: "));
+      Serial.println(c);
+      return;
+    break;
+  }
+}
+
+inline void menu_config_mask() {
+  char c;
+  Serial.println();
+  Serial.println(F("Config mask"));
+  Serial.println();
+  Serial.println(F("Channels    :  3210"));
+  Serial.print(  F("Current mask: ["));
+  Serial.print((char)((mask & _BV(3)) ? 'x' : '-'));
+  Serial.print((char)((mask & _BV(2)) ? 'x' : '-'));
+  Serial.print((char)((mask & _BV(1)) ? 'x' : '-'));
+  Serial.print((char)((mask & _BV(0)) ? 'x' : '-'));
+  Serial.println(F("]"));
+  Serial.println();
+  Serial.print(F("Toggle channel: "));
+
+  c = Serial.read();
+  Serial.println(c);
+
+  switch(c) {
+    case '0':
+    case '1':
+    case '2':
+    case '3':
+      mask ^= _BV(c-'0');
+    break;
+    default:
+      Serial.print(F("Unknown Channel: "));
+      Serial.println(c);
+      return;
+    break;
+  }
 }
 
 inline void menu_mem() {
@@ -336,24 +453,34 @@ inline void menu_capture() {
   data[0] |= data[0] >> 4;
 
   // Wait some change
-  while((data[0] & (MASK<<4)) == (PINF & (MASK<<4)));
+  while((data[0] & mask) == ((PINF>>4) & mask));
 
   unsigned long time;
   cli();
-  time=capture_8(); // 2MHz
-  time=capture_16();// 1MHz
-  time=capture_32();// 500kHz
-  time=capture_64();// 250kHz
+  switch(clk_div) {
+    case 8:
+    	time=capture_8();  // 2MHz
+        break;
+    case 16:
+    	time=capture_16(); // 1MHz
+        break;
+    case 32:
+    	time=capture_32(); // 500kHz
+        break;
+    case 64:
+    	time=capture_64(); // 250kHz
+        break;
+  }
   sei();
   
-  Serial.println("END ASM");
-  
-  rate = (MAXCAP * 1000000) / time;
+  unsigned long rate = (MAXCAP * 1000000) / time;
   
   Serial.print(F("Buffer filled in: "));
   Serial.print(time);
   Serial.println(F(" us"));
   Serial.print(F("Freq: "));
+  Serial.print(F_CPU/clk_div);
+  Serial.print(F("Measured Freq: "));
   Serial.print(rate);
   Serial.println(F(" Hz"));
 }
@@ -382,15 +509,15 @@ inline void menu_export() {
   int s=1;
   int i=0;
   int c=0;
-  uint8_t last = (data[0] & MASK);
+  uint8_t last = (data[0] & mask);
   while(i<MAXCAP) {
-    if(last != (data[i] & MASK)) {
-      last = (data[i] & MASK);
+    if(last != (data[i] & mask)) {
+      last = (data[i] & mask);
       s++;
     }
     c++;
-    if(last != ((data[i]>>4) & MASK)) {
-      last = ((data[i]>>4) & MASK);
+    if(last != ((data[i]>>4) & mask)) {
+      last = ((data[i]>>4) & mask);
       s++;
     }
     c++;
@@ -400,7 +527,7 @@ inline void menu_export() {
   Serial.print(F(";Size: "));
   Serial.println(s);
   Serial.print(F(";Rate: "));
-  Serial.println(rate);
+  Serial.println(F_CPU/clk_div);
   Serial.println(F(";Channels: 2"));
   Serial.println(F(";EnabledChannels: 15"));
   Serial.println(F(";TriggerPosition: 0"));
@@ -410,23 +537,23 @@ inline void menu_export() {
   Serial.println(F(";CursorEnabled: true"));
   
   i=c=0;
-  last = (data[0] & MASK);
+  last = (data[0] & mask);
   Serial.print(F("0000000"));
   Serial.print(last);
   Serial.print(F("@"));
   Serial.println(i);
   
   while(i<MAXCAP) {
-    if(last != (data[i] & MASK)) {
-      last = (data[i] & MASK);
+    if(last != (data[i] & mask)) {
+      last = (data[i] & mask);
       Serial.print(F("0000000"));
       Serial.print(last);
       Serial.print(F("@"));
       Serial.println(c);
     }
     c++;
-    if(last != ((data[i]>>4) & MASK)) {
-      last = ((data[i]>>4) & MASK);
+    if(last != ((data[i]>>4) & mask)) {
+      last = ((data[i]>>4) & mask);
       Serial.print(F("0000000"));
       Serial.print(last);
       Serial.print(F("@"));
