@@ -141,6 +141,7 @@ inline void menu_config() {
     Serial.println();
     Serial.print(F("Option: "));
 
+    while(!Serial.available());
     c = Serial.read();
     Serial.println(c);
 
@@ -182,6 +183,7 @@ inline void menu_config_rate() {
   Serial.println();
   Serial.print(F("Rate: "));
 
+  while(!Serial.available());
   c = Serial.read();
   Serial.println(c);
 
@@ -221,6 +223,7 @@ inline void menu_config_mask() {
   Serial.println();
   Serial.print(F("Toggle channel: "));
 
+  while(!Serial.available());
   c = Serial.read();
   Serial.println(c);
 
@@ -263,10 +266,15 @@ inline void menu_mem() {
   Serial.println();
 }
 
-unsigned long capture_8() {
+inline void capture_8() {
   uint16_t cnt = MAXCAP - 1;
   uint8_t  *p  = data+1;
-  unsigned long start = micros();
+  
+  data[0]  = PINF & 0xF0;
+  data[0] |= data[0] >> 4;
+  // Wait some change
+  while((data[0] & (mask<<4)) == (PINF & (mask<<4)));
+  
   asm volatile(
     "in   r16, %[PF]      \n\t" // CK+1 = 1
     "andi r16, 0xF0       \n\t" // CK+1 = 2
@@ -275,7 +283,7 @@ unsigned long capture_8() {
     "rjmp .+0             \n\t" // CK+2 = 6
     "rjmp .+0             \n\t" // CK+2 = 8
   
-    "cloop8:               \n\t"
+    "1:                   \n\t"
     
     "in   r17, %[PF]      \n\t" // CK+1 = 1
     "andi r17, 0xF0       \n\t" // CK+1 = 2
@@ -290,21 +298,24 @@ unsigned long capture_8() {
     "nop                  \n\t" // CK+1 = 4
     
     "sbiw %[CNT], 1       \n\t" // CK+2 = 6
-    "brne cloop8           \n\t" // CK+2 = 8
+    "brne 1b              \n\t" // CK+2 = 8
     : 
     : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
       [CNT]  "w"  (cnt),
       [DATA] "x"  (p)
     : "r16","r17"
   );
-  unsigned long end = micros();
-  return end-start;
 }
 
-unsigned long capture_16() {
+inline void capture_16() {
   uint16_t cnt = MAXCAP - 1;
   uint8_t  *p  = data+1;
-  unsigned long start = micros();
+  
+  data[0]  = PINF & 0xF0;
+  data[0] |= data[0] >> 4;
+  // Wait some change
+  while((data[0] & (mask<<4)) == (PINF & (mask<<4)));
+  
   asm volatile(
     "in   r16, %[PF]      \n\t" // CK+1 = 1
     "andi r16, 0xF0       \n\t" // CK+1 = 2
@@ -312,11 +323,12 @@ unsigned long capture_16() {
     
     // 3*4 = 12 CK
     "ldi  r18, 4          \n\t"
+    "2:                   \n\t"
     "dec  r18             \n\t"
-    "brne .-4             \n\t" // CK+12 = 15
+    "brne 2b              \n\t" // CK+12 = 15
     "nop                  \n\t" // CK+1  = 16
   
-    "cloop16:             \n\t"
+    "1:                   \n\t"
     
     "in   r17, %[PF]      \n\t" // CK+1 = 1
     "andi r17, 0xF0       \n\t" // CK+1 = 2
@@ -325,8 +337,9 @@ unsigned long capture_16() {
     
     // 3*3 = 9 CK
     "ldi  r18, 3          \n\t"
+    "2:                   \n\t"
     "dec  r18             \n\t"
-    "brne .-4             \n\t" // CK+9 = 14
+    "brne 2b              \n\t" // CK+9 = 14
     "rjmp .+0             \n\t" // CK+2 = 16
     
     "in   r16, %[PF]      \n\t" // CK+1 = 1
@@ -335,25 +348,29 @@ unsigned long capture_16() {
     
     // 3*3 = 9 CK
     "ldi  r18, 3          \n\t"
+    "2:                   \n\t"
     "dec  r18             \n\t"
-    "brne .-4             \n\t" // CK+9 = 12
+    "brne 2b              \n\t" // CK+9 = 12
     
     "sbiw %[CNT], 1       \n\t" // CK+2 = 14
-    "brne cloop16         \n\t" // CK+2 = 16
+    "brne 1b              \n\t" // CK+2 = 16
     : 
     : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
       [CNT]  "w"  (cnt),
       [DATA] "x"  (p)
     : "r16","r17","r18"
   );
-  unsigned long end = micros();
-  return end-start;
 }
 
-unsigned long capture_32() {
+inline void capture_32() {
   uint16_t cnt = MAXCAP - 1;
   uint8_t  *p  = data+1;
-  unsigned long start = micros();
+  
+  data[0]  = PINF & 0xF0;
+  data[0] |= data[0] >> 4;
+  // Wait some change
+  while((data[0] & (mask<<4)) == (PINF & (mask<<4)));
+  
   asm volatile(
     "in   r16, %[PF]      \n\t" // CK+1 = 1
     "andi r16, 0xF0       \n\t" // CK+1 = 2
@@ -361,11 +378,12 @@ unsigned long capture_32() {
     
     // 3*9 = 27 CK
     "ldi  r18, 9          \n\t"
+    "2:                   \n\t"
     "dec  r18             \n\t"
-    "brne .-4             \n\t" // CK+27 = 30
+    "brne 2b              \n\t" // CK+27 = 30
     "rjmp .+0             \n\t" // CK+2  = 32
     
-    "cloop32:             \n\t"
+    "1:                   \n\t"
     
     "in   r17, %[PF]      \n\t" // CK+1 = 1
     "andi r17, 0xF0       \n\t" // CK+1 = 2
@@ -374,8 +392,9 @@ unsigned long capture_32() {
     
     // 3*9 = 27 CK
     "ldi  r18, 9          \n\t"
+    "2:                   \n\t"
     "dec  r18             \n\t"
-    "brne .-4             \n\t" // CK+27 = 32
+    "brne 2b              \n\t" // CK+27 = 32
     
     "in   r16, %[PF]      \n\t" // CK+1 = 1
     "andi r16, 0xF0       \n\t" // CK+1 = 2
@@ -383,38 +402,43 @@ unsigned long capture_32() {
     
     // 3*8 = 24 CK
     "ldi  r18, 8          \n\t"
+    "2:                   \n\t"
     "dec  r18             \n\t"
-    "brne .-4             \n\t" // CK+24 = 27
+    "brne 2b              \n\t" // CK+24 = 27
     "nop                  \n\t" // CK+1  = 28
     
     "sbiw %[CNT], 1       \n\t" // CK+2 = 30
-    "brne cloop32         \n\t" // CK+2 = 32
+    "brne 1b              \n\t" // CK+2 = 32
     : 
     : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
       [CNT]  "w"  (cnt),
       [DATA] "x"  (p)
     : "r16","r17","r18"
   );
-  unsigned long end = micros();
-  return end-start;
 }
 
-unsigned long capture_64() {
+inline void capture_64() {
   uint16_t cnt = MAXCAP - 1;
   uint8_t  *p  = data+1;
-  unsigned long start = micros();
+  
+  data[0]  = PINF & 0xF0;
+  data[0] |= data[0] >> 4;
+  // Wait some change
+  while((data[0] & (mask<<4)) == (PINF & (mask<<4)));
+  
   asm volatile(
     "in   r16, %[PF]      \n\t" // CK+1 = 1
     "andi r16, 0xF0       \n\t" // CK+1 = 2
     "swap r16             \n\t" // CK+1 = 3
     
-    // 3*20 = 60 CK
+    // 3*20 = 60 CK     
     "ldi  r18, 20         \n\t"
+    "2:                   \n\t"
     "dec  r18             \n\t"
-    "brne .-4             \n\t" // CK+60 = 63
+    "brne 2b              \n\t" // CK+60 = 63
     "nop                  \n\t" // CK+1  = 64
     
-    "cloop64:             \n\t"
+    "2:                   \n\t"
     
     "in   r17, %[PF]      \n\t" // CK+1 = 1
     "andi r17, 0xF0       \n\t" // CK+1 = 2
@@ -423,8 +447,9 @@ unsigned long capture_64() {
     
     // 3*19 = 57 CK
     "ldi  r18, 19         \n\t"
+    "2:                   \n\t"
     "dec  r18             \n\t"
-    "brne .-4             \n\t" // CK+57 = 62
+    "brne 2b              \n\t" // CK+57 = 62
     "rjmp .+0             \n\t" // CK+2  = 64
     
     "in   r16, %[PF]      \n\t" // CK+1 = 1
@@ -433,56 +458,49 @@ unsigned long capture_64() {
     
     // 3*19 = 57 CK
     "ldi  r18, 19         \n\t"
+    "2:                   \n\t"
     "dec  r18             \n\t"
-    "brne .-4             \n\t" // CK+57 = 60
+    "brne 2b              \n\t" // CK+57 = 60
     
     "sbiw %[CNT], 1       \n\t" // CK+2 = 62
-    "brne cloop64         \n\t" // CK+2 = 64
+    "brne 2b              \n\t" // CK+2 = 64
     : 
     : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
       [CNT]  "w"  (cnt),
       [DATA] "x"  (p)
     : "r16","r17","r18"
   );
-  unsigned long end = micros();
-  return end-start;
 }
 
 inline void menu_capture() {
-  data[0]  = PINF & 0xF0;
-  data[0] |= data[0] >> 4;
-
-  // Wait some change
-  while((data[0] & mask) == ((PINF>>4) & mask));
-
-  unsigned long time;
   cli();
   switch(clk_div) {
     case 8:
-    	time=capture_8();  // 2MHz
+    	capture_8();  // 2MHz
         break;
     case 16:
-    	time=capture_16(); // 1MHz
+    	capture_16(); // 1MHz
         break;
     case 32:
-    	time=capture_32(); // 500kHz
+    	capture_32(); // 500kHz
         break;
     case 64:
-    	time=capture_64(); // 250kHz
+    	capture_64(); // 250kHz
         break;
   }
   sei();
   
-  unsigned long rate = (MAXCAP * 1000000) / time;
+  //unsigned long rate = (MAXCAP * 1000000) / time;
   
-  Serial.print(F("Buffer filled in: "));
-  Serial.print(time);
-  Serial.println(F(" us"));
-  Serial.print(F("Freq: "));
+  //Serial.print(F("Buffer filled in: "));
+  //Serial.print(time);
+  //Serial.println(F(" us"));
+  Serial.print(F("Freq:          "));
   Serial.print(F_CPU/clk_div);
-  Serial.print(F("Measured Freq: "));
-  Serial.print(rate);
   Serial.println(F(" Hz"));
+  //Serial.print(F("Measured Freq: "));
+  //Serial.print(rate);
+  //Serial.println(F(" Hz"));
 }
 
 const uint16_t LINESIZE = 64;
