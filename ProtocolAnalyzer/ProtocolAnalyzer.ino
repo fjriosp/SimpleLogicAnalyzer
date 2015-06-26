@@ -4,7 +4,7 @@ uint8_t data[MAXCAP];
 // Clock Divider
 uint8_t clk_div = 8;
 // Signal mask
-uint8_t mask = 0x03;
+uint8_t mask = 0x01;
 
 void setup() {
   // Paint memory
@@ -26,6 +26,28 @@ void setup() {
   
   // Open serial port
   Serial.begin(9600);
+  
+  pinMode(9,OUTPUT);
+  
+  cli();
+  // Stop timer1
+  TIMSK1 = 0;
+  TCCR1B = 0;
+  TCCR1A = 0;
+  TCNT1  = 0;
+  OCR1A  = 0;
+
+  // 16MHz / 1 / (159+1) / 2 =  50 kHz
+  // 16MHz / 1 / (79+1)  / 2 = 100 kHz
+  // 16MHz / 1 / (15+1)  / 2 = 500 kHz
+  OCR1A = 159;
+  // Enable timer1
+  TCCR1A = _BV(COM1A0)              // Toggle OC1A (pin 9) on Match
+         | _BV(WGM11) | _BV(WGM10); // Fast PWM
+  TCCR1B = _BV(WGM13)  | _BV(WGM12) // Fast PWM
+         | _BV(CS10);               // 16 MHz (No prescaler)
+  
+  sei();
 }
 
 void loop() {
@@ -438,7 +460,7 @@ inline void capture_64() {
     "brne 2b              \n\t" // CK+60 = 63
     "nop                  \n\t" // CK+1  = 64
     
-    "2:                   \n\t"
+    "1:                   \n\t"
     
     "in   r17, %[PF]      \n\t" // CK+1 = 1
     "andi r17, 0xF0       \n\t" // CK+1 = 2
@@ -463,7 +485,7 @@ inline void capture_64() {
     "brne 2b              \n\t" // CK+57 = 60
     
     "sbiw %[CNT], 1       \n\t" // CK+2 = 62
-    "brne 2b              \n\t" // CK+2 = 64
+    "brne 1b              \n\t" // CK+2 = 64
     : 
     : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
       [CNT]  "w"  (cnt),
@@ -504,19 +526,19 @@ inline void menu_capture() {
 }
 
 const uint16_t LINESIZE = 64;
-const uint16_t NLINES = 2;
 const char GRAPH[] = {'.','+'};
 
 inline void menu_show() {
   int i=0;
   while(i<MAXCAP) {
-    // Signal0
-    for(uint8_t s=0;s<NLINES;s++) {
-      for(int j=0;j<LINESIZE;j++) {
-        Serial.print(GRAPH[(data[i+j]&(0x01 << s)) == 0 ? 0 : 1]);
-        Serial.print(GRAPH[(data[i+j]&(0x10 << s)) == 0 ? 0 : 1]);
+    for(uint8_t s=0;s<4;s++) {
+      if(mask & _BV(s)) {
+        for(int j=0;j<LINESIZE;j++) {
+          Serial.print(GRAPH[(data[i+j]&(0x01 << s)) == 0 ? 0 : 1]);
+          Serial.print(GRAPH[(data[i+j]&(0x10 << s)) == 0 ? 0 : 1]);
+        }
+        Serial.println();
       }
-      Serial.println();
     }
     i += LINESIZE;
     Serial.println();
