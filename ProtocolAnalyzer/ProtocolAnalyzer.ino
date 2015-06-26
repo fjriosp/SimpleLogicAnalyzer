@@ -4,7 +4,7 @@ uint8_t data[MAXCAP];
 // Clock Divider
 uint8_t clk_div = 8;
 // Signal mask
-uint8_t mask = 0x01;
+uint8_t mask = 0x0F;
 
 void setup() {
   // Paint memory
@@ -25,8 +25,10 @@ void setup() {
     data[i]=0;
   
   // Open serial port
-  Serial.begin(9600);
+  Serial.begin(115200);
+
   
+  // Used to debug
   pinMode(9,OUTPUT);
   
   cli();
@@ -37,10 +39,12 @@ void setup() {
   TCNT1  = 0;
   OCR1A  = 0;
 
-  // 16MHz / 1 / (159+1) / 2 =  50 kHz
-  // 16MHz / 1 / (79+1)  / 2 = 100 kHz
-  // 16MHz / 1 / (15+1)  / 2 = 500 kHz
-  OCR1A = 159;
+  // 16MHz / 1 / (7999+1) / 2 =   1 kHz
+  // 16MHz / 1 / (159+1)  / 2 =  50 kHz
+  // 16MHz / 1 / (124+1)  / 2 =  64 kHz
+  // 16MHz / 1 / (79+1)   / 2 = 100 kHz
+  // 16MHz / 1 / (15+1)   / 2 = 500 kHz
+  OCR1A = 7999;
   // Enable timer1
   TCCR1A = _BV(COM1A0)              // Toggle OC1A (pin 9) on Match
          | _BV(WGM11) | _BV(WGM10); // Fast PWM
@@ -48,11 +52,194 @@ void setup() {
          | _BV(CS10);               // 16 MHz (No prescaler)
   
   sei();
+
 }
 
 void loop() {
   menu_loop();
 }
+
+//########
+//# SUMP #
+//########
+/* XON/XOFF are not supported. */
+#define SUMP_RESET 0x00
+#define SUMP_ARM   0x01
+#define SUMP_QUERY 0x02
+#define SUMP_XON   0x11
+#define SUMP_XOFF  0x13
+
+/* mask & values used, config ignored. only stage0 supported */
+#define SUMP_TRIGGER_MASK 0xC0
+#define SUMP_TRIGGER_VALUES 0xC1
+#define SUMP_TRIGGER_CONFIG 0xC2
+
+/* Most flags (except RLE) are ignored. */
+#define SUMP_SET_DIVIDER 0x80
+#define SUMP_SET_READ_DELAY_COUNT 0x81
+#define SUMP_SET_FLAGS 0x82
+#define SUMP_SET_RLE 0x0100
+
+/* extended commands -- self-test unsupported, but metadata is returned. */
+#define SUMP_SELF_TEST 0x03
+#define SUMP_GET_METADATA 0x04
+
+/*
+ * Extended SUMP commands are 5 bytes.  A command byte followed by 4 bytes
+ * of options. We already read the command byte, this gets the remaining
+ * 4 bytes of the command.
+ * If we're debugging we save the received commands in a debug buffer.
+ * We need to make sure we don't overrun the debug buffer.
+ */
+void getExtCmd(uint8_t *extCmdBytes) {
+  delay(10);
+  extCmdBytes[0] = Serial.read();
+  extCmdBytes[1] = Serial.read();
+  extCmdBytes[2] = Serial.read();
+  extCmdBytes[3] = Serial.read();
+}
+
+void sump_command(uint8_t cmd) {
+  unsigned long divider;
+  uint8_t extCmdBytes[4];
+  switch (cmd) {
+    case SUMP_RESET:
+      /*
+       * We don't do anything here as some unsupported extended commands have
+       * zero bytes and are mistaken as resets.  This can trigger false resets
+       * so we don't erase the data or do anything for a reset.
+       */
+      break;
+    case SUMP_QUERY:
+      /* return the expected bytes. */
+      Serial.write('1');
+      Serial.write('A');
+      Serial.write('L');
+      Serial.write('S');
+      break;
+    case SUMP_ARM:
+      do_capture();
+      
+      for(int i=0; i<MAXCAP; i++) {
+        Serial.print(data[i]&0x0F);
+        Serial.print((data[i]>>4)&0x0F);
+      }
+      
+      break;
+    case SUMP_TRIGGER_MASK:
+      /*
+       * the trigger mask byte has a '1' for each enabled trigger so
+       * we can just use it directly as our trigger mask.
+       */
+      getExtCmd(extCmdBytes);
+      mask = extCmdBytes[0];
+      break;
+    case SUMP_TRIGGER_VALUES:
+      /* UNSUPPORTED 
+       * trigger_values can be used directly as the value of each bit
+       * defines whether we're looking for it to be high or low.
+       */
+      getExtCmd(extCmdBytes);
+      break;
+    case SUMP_TRIGGER_CONFIG:
+      /* read the rest of the command bytes, but ignore them. */
+      getExtCmd(extCmdBytes);
+      break;
+    case SUMP_SET_DIVIDER:
+      /*
+       * the shifting needs to be done on the 32bit unsigned long variable
+       * so that << 16 doesn't end up as zero.
+       */
+      getExtCmd(extCmdBytes);
+      divider = extCmdBytes[2];
+      divider = divider << 8;
+      divider += extCmdBytes[1];
+      divider = divider << 8;
+      divider += extCmdBytes[0];
+      
+      // rate = 100MHz / (divider + 1)
+      if (divider == 49) {
+	clk_div = 8;
+      }else if (divider == 99) {
+	clk_div = 16;
+      }else if (divider == 199) {
+	clk_div = 32;
+      }else if (divider == 399) {
+	clk_div = 64;
+      }
+      break;
+    case SUMP_SET_READ_DELAY_COUNT:
+      /* UNSUPPORTED
+       * this just sets up how many samples there should be before
+       * and after the trigger fires.  The readCount is total samples
+       * to return and delayCount number of samples after the trigger.
+       * this sets the buffer splits like 0/100, 25/75, 50/50
+       * for example if readCount == delayCount then we should
+       * return all samples starting from the trigger point.
+       * if delayCount < readCount we return (readCount - delayCount) of
+       * samples from before the trigger fired.
+       */
+      getExtCmd(extCmdBytes);
+      break;
+    case SUMP_SET_FLAGS:
+      /* read the rest of the command bytes, but ignore them. */
+      getExtCmd(extCmdBytes);
+      break;
+    case SUMP_GET_METADATA:
+      /*
+       * We return a description of our capabilities.
+       */
+      delay(10);
+      /* device name */
+      Serial.write((uint8_t)0x01);
+      Serial.write('A');
+      Serial.write('G');
+      Serial.write('L');
+      Serial.write('A');
+      Serial.write('v');
+      Serial.write('0');
+      Serial.write((uint8_t)0x00);
+
+      /* firmware version */
+      Serial.write((uint8_t)0x02);
+      Serial.write('0');
+      Serial.write('.');
+      Serial.write('1');
+      Serial.write('4');
+      Serial.write((uint8_t)0x00);
+
+      /* sample memory */
+      Serial.write((uint8_t)0x21);
+      Serial.write((uint8_t)0x00);
+      Serial.write((uint8_t)0x00);
+      /* 4096 bytes */
+      Serial.write((uint8_t)0x10);
+      Serial.write((uint8_t)0x00);
+
+      /* sample rate (16MHz) */
+      Serial.write((uint8_t)0x23);
+      Serial.write((uint8_t)0x00);
+      Serial.write((uint8_t)0x3E);
+      Serial.write((uint8_t)0x80);
+      Serial.write((uint8_t)0x00);
+
+      /* number of probes 4 */
+      Serial.write((uint8_t)0x40);
+      Serial.write((uint8_t)0x04);
+
+      /* protocol version (2) */
+      Serial.write((uint8_t)0x41);
+      Serial.write((uint8_t)0x02);
+
+      /* end of data */
+      Serial.write((uint8_t)0x00);
+      break;
+    case SUMP_SELF_TEST:
+      /* ignored. */
+      break;
+  }
+}
+
 
 //#############
 //# Mem Trace #
@@ -100,30 +287,34 @@ uint16_t mem_unused() {
 inline void menu_loop() {
   while(Serial.available()) {
     char cmd = Serial.read();
-    Serial.println(cmd);
-
+    
     switch(cmd) {
       case 'h':
+        Serial.println(cmd);
         menu_help();
         break;
       case 'C':
+        Serial.println(cmd);
         menu_config();
         break;
       case 'm':
+        Serial.println(cmd);
         menu_mem();
         break;
       case 'c':
+        Serial.println(cmd);
         menu_capture();
         break;
       case 's':
+        Serial.println(cmd);
         menu_show();
         break;
       case 'e':
+        Serial.println(cmd);
         menu_export();
         break;
       default:
-        Serial.print(F("Unknown command: "));
-        Serial.println(cmd);
+        sump_command(cmd);
         break;
     }
   }
@@ -304,7 +495,7 @@ inline void capture_8() {
     "nop                  \n\t" // CK+1 = 4
     "rjmp .+0             \n\t" // CK+2 = 6
     "rjmp .+0             \n\t" // CK+2 = 8
-  
+
     "1:                   \n\t"
     
     "in   r17, %[PF]      \n\t" // CK+1 = 1
@@ -494,7 +685,7 @@ inline void capture_64() {
   );
 }
 
-inline void menu_capture() {
+inline void do_capture() {
   cli();
   switch(clk_div) {
     case 8:
@@ -511,6 +702,10 @@ inline void menu_capture() {
         break;
   }
   sei();
+}
+
+inline void menu_capture() {
+  do_capture();
   
   //unsigned long rate = (MAXCAP * 1000000) / time;
   
@@ -546,6 +741,8 @@ inline void menu_show() {
 }
 
 inline void menu_export() {
+  char buf[16];
+  
   int s=1;
   int i=0;
   int c=0;
@@ -568,7 +765,7 @@ inline void menu_export() {
   Serial.println(s);
   Serial.print(F(";Rate: "));
   Serial.println(F_CPU/clk_div);
-  Serial.println(F(";Channels: 2"));
+  Serial.println(F(";Channels: 4"));
   Serial.println(F(";EnabledChannels: 15"));
   Serial.println(F(";TriggerPosition: 0"));
   Serial.println(F(";Compressed: true"));
@@ -578,26 +775,20 @@ inline void menu_export() {
   
   i=c=0;
   last = (data[0] & mask);
-  Serial.print(F("0000000"));
-  Serial.print(last);
-  Serial.print(F("@"));
-  Serial.println(i);
+  sprintf(buf,"%08d@%d",last,0);
+  Serial.println(buf);
   
   while(i<MAXCAP) {
     if(last != (data[i] & mask)) {
       last = (data[i] & mask);
-      Serial.print(F("0000000"));
-      Serial.print(last);
-      Serial.print(F("@"));
-      Serial.println(c);
+      sprintf(buf,"%08d@%d",last,c);
+      Serial.println(buf);
     }
     c++;
     if(last != ((data[i]>>4) & mask)) {
       last = ((data[i]>>4) & mask);
-      Serial.print(F("0000000"));
-      Serial.print(last);
-      Serial.print(F("@"));
-      Serial.println(c);
+      sprintf(buf,"%08d@%d",last,c);
+      Serial.println(buf);
     }
     c++;
     i++;
