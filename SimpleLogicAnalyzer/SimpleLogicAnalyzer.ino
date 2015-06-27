@@ -321,7 +321,7 @@ inline void menu_loop() {
 
 inline void menu_help() {
   Serial.println();
-  Serial.println(F("SimpleProtocolAnalyzer 1.0"));
+  Serial.println(F("SimpleLogicAnalyzer 1.00"));
   Serial.println();
   Serial.println(F("Commands:"));
   Serial.println(F(" h Show this help"));
