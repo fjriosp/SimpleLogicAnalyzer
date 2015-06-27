@@ -1,5 +1,5 @@
 // Data
-const uint16_t MAXCAP=2048;
+const uint16_t MAXCAP = 2048;
 uint8_t data[MAXCAP];
 // Clock Divider
 uint16_t clk_div = 8;
@@ -9,7 +9,7 @@ uint8_t mask = 0x0F;
 void setup() {
   // Paint memory
   mem_paint();
-  
+
   // Disable ADC
   ADCSRA &= ~(_BV(ADEN));
   // Disable Analog Comparator
@@ -19,21 +19,21 @@ void setup() {
   DDRF  &= 0x0F;
   //PORTF |= 0xF0;
   PORTF &= ~(0xF0);
-  
+
   // Initialize data
-  for(int i=0; i<MAXCAP; i++)
-    data[i]=0;
-  
+  for (int i = 0; i < MAXCAP; i++)
+    data[i] = 0;
+
   // Open serial port
   Serial.begin(115200);
 
-  
+
   // Used to debug
-  pinMode(9,OUTPUT);
-  pinMode(10,OUTPUT);
-  pinMode(5,OUTPUT);
-  pinMode(6,OUTPUT);
-  
+  pinMode(9, OUTPUT);
+  pinMode(10, OUTPUT);
+  pinMode(5, OUTPUT);
+  pinMode(6, OUTPUT);
+
   cli();
   // Stop timer1
   TIMSK1 = 0;
@@ -51,10 +51,10 @@ void setup() {
   OCR1A = 159;
   // Enable timer1
   TCCR1A = _BV(COM1A0)              // Toggle OC1A (pin 9) on Match
-         | _BV(WGM11) | _BV(WGM10); // Fast PWM
+           | _BV(WGM11) | _BV(WGM10); // Fast PWM
   TCCR1B = _BV(WGM13)  | _BV(WGM12) // Fast PWM
-         | _BV(CS10);               // 16 MHz (No prescaler)
-  
+           | _BV(CS10);               // 16 MHz (No prescaler)
+
   sei();
 
 }
@@ -123,12 +123,12 @@ void sump_command(uint8_t cmd) {
       break;
     case SUMP_ARM:
       do_capture();
-      
-      for(int i=0; i<MAXCAP; i++) {
-        Serial.print(data[i]&0x0F);
-        Serial.print((data[i]>>4)&0x0F);
+
+      for (int i = 0; i < MAXCAP; i++) {
+        Serial.print(data[i] & 0x0F);
+        Serial.print((data[i] >> 4) & 0x0F);
       }
-      
+
       break;
     case SUMP_TRIGGER_MASK:
       /*
@@ -139,7 +139,7 @@ void sump_command(uint8_t cmd) {
       mask = extCmdBytes[0];
       break;
     case SUMP_TRIGGER_VALUES:
-      /* UNSUPPORTED 
+      /* UNSUPPORTED
        * trigger_values can be used directly as the value of each bit
        * defines whether we're looking for it to be high or low.
        */
@@ -160,10 +160,10 @@ void sump_command(uint8_t cmd) {
       divider += extCmdBytes[1];
       divider = divider << 8;
       divider += extCmdBytes[0];
-      
+
       // rate = 16MHz / (divider + 1)
-      clk_div = divider+1;
-      
+      clk_div = divider + 1;
+
       break;
     case SUMP_SET_READ_DELAY_COUNT:
       /* UNSUPPORTED
@@ -247,33 +247,33 @@ extern uint8_t __bss_end;
 extern uint8_t __heap_start;
 extern uint8_t *__brkval;
 
-const uint8_t STACK_CANARY=0xAA;
+const uint8_t STACK_CANARY = 0xAA;
 
 inline void mem_paint(void) {
-  uint8_t *p = __brkval==0 ? &__heap_start : __brkval;
-  
-  while((uint16_t)p <= SP)
+  uint8_t *p = __brkval == 0 ? &__heap_start : __brkval;
+
+  while ((uint16_t)p <= SP)
   {
-      *p = STACK_CANARY;
-      p++;
+    *p = STACK_CANARY;
+    p++;
   }
 }
 
 uint16_t mem_unused() {
-  uint8_t *p = __brkval==0 ? &__heap_start : __brkval;
-  
+  uint8_t *p = __brkval == 0 ? &__heap_start : __brkval;
+
   uint16_t c = 0;
   uint16_t maxc = 0;
   // Search max contiguous bytes with value STACK_CANARY
-  while(p <= (uint8_t*)SP) {
-    if(*p == STACK_CANARY) {
+  while (p <= (uint8_t*)SP) {
+    if (*p == STACK_CANARY) {
       c++;
-    } else if(c > maxc) {
+    } else if (c > maxc) {
       maxc = c;
     }
     p++;
   }
-  
+
   return maxc;
 }
 
@@ -281,10 +281,10 @@ uint16_t mem_unused() {
 //# Menu #
 //########
 inline void menu_loop() {
-  while(Serial.available()) {
+  while (Serial.available()) {
     char cmd = Serial.read();
-    
-    switch(cmd) {
+
+    switch (cmd) {
       case 'h':
         Serial.println(cmd);
         menu_help();
@@ -338,7 +338,7 @@ inline void menu_config() {
     Serial.println();
     Serial.println(F("Parameters:"));
     Serial.print(F(" r rate ["));
-    Serial.print(F_CPU/clk_div);
+    Serial.print(F_CPU / clk_div);
     Serial.println(F("]"));
     Serial.print(F(" m mask ["));
     Serial.print((char)((mask & _BV(3)) ? 'x' : '-'));
@@ -350,25 +350,25 @@ inline void menu_config() {
     Serial.println();
     Serial.print(F("Option: "));
 
-    while(!Serial.available());
+    while (!Serial.available());
     c = Serial.read();
     Serial.println(c);
 
-    switch(c) {
+    switch (c) {
       case 'r':
         menu_config_rate();
-      break;
+        break;
       case 'm':
         menu_config_mask();
-      break;
+        break;
       case 'q': // Will exit
-      break;
+        break;
       default:
         Serial.print(F("Unknown option: "));
         Serial.println(c);
-      break;
+        break;
     }
-  } while(c!='q');
+  } while (c != 'q');
 }
 
 inline void menu_config_rate() {
@@ -378,42 +378,42 @@ inline void menu_config_rate() {
   Serial.println();
   Serial.println(F("Available rates:"));
   Serial.print(F(" 0 F_CPU/8  ["));
-  Serial.print(F_CPU/8);
+  Serial.print(F_CPU / 8);
   Serial.println(F("]"));
   Serial.print(F(" 1 F_CPU/16 ["));
-  Serial.print(F_CPU/16);
+  Serial.print(F_CPU / 16);
   Serial.println(F("]"));
   Serial.print(F(" 2 F_CPU/32 ["));
-  Serial.print(F_CPU/32);
+  Serial.print(F_CPU / 32);
   Serial.println(F("]"));
   Serial.print(F(" 3 F_CPU/64 ["));
-  Serial.print(F_CPU/64);
+  Serial.print(F_CPU / 64);
   Serial.println(F("]"));
   Serial.println();
   Serial.print(F("Rate: "));
 
-  while(!Serial.available());
+  while (!Serial.available());
   c = Serial.read();
   Serial.println(c);
 
-  switch(c) {
+  switch (c) {
     case '0':
       clk_div = 8;
-    break;
+      break;
     case '1':
       clk_div = 16;
-    break;
+      break;
     case '2':
       clk_div = 32;
-    break;
+      break;
     case '3':
       clk_div = 64;
-    break;
+      break;
     default:
       Serial.print(F("Unknown Rate: "));
       Serial.println(c);
       return;
-    break;
+      break;
   }
 }
 
@@ -432,32 +432,32 @@ inline void menu_config_mask() {
   Serial.println();
   Serial.print(F("Toggle channel: "));
 
-  while(!Serial.available());
+  while (!Serial.available());
   c = Serial.read();
   Serial.println(c);
 
-  switch(c) {
+  switch (c) {
     case '0':
     case '1':
     case '2':
     case '3':
-      mask ^= _BV(c-'0');
-    break;
+      mask ^= _BV(c - '0');
+      break;
     default:
       Serial.print(F("Unknown Channel: "));
       Serial.println(c);
       return;
-    break;
+      break;
   }
 }
 
 inline void menu_mem() {
-  uint16_t total_size = RAMEND-((uint16_t)&__data_start)+1;
-  uint16_t data_size  = ((uint16_t)&__data_end)-((uint16_t)&__data_start);
-  uint16_t bss_size   = ((uint16_t)&__bss_end)-((uint16_t)&__bss_start);
-  uint16_t heap_size  = ((uint16_t)__brkval) == 0 ? 0 : (((uint16_t)__brkval)-((uint16_t)&__heap_start));
-  uint16_t stack_size = RAMEND-SP;
-  uint16_t total_used = data_size+bss_size+heap_size+stack_size;
+  uint16_t total_size = RAMEND - ((uint16_t)&__data_start) + 1;
+  uint16_t data_size  = ((uint16_t)&__data_end) - ((uint16_t)&__data_start);
+  uint16_t bss_size   = ((uint16_t)&__bss_end) - ((uint16_t)&__bss_start);
+  uint16_t heap_size  = ((uint16_t)__brkval) == 0 ? 0 : (((uint16_t)__brkval) - ((uint16_t)&__heap_start));
+  uint16_t stack_size = RAMEND - SP;
+  uint16_t total_used = data_size + bss_size + heap_size + stack_size;
   Serial.print(F("Total:  "));
   Serial.println(total_size);
   Serial.print(F("Data:   "));
@@ -469,7 +469,7 @@ inline void menu_mem() {
   Serial.print(F("Stack:  "));
   Serial.println(stack_size);
   Serial.print(F("Free:   "));
-  Serial.println(RAMEND-total_used);
+  Serial.println(RAMEND - total_used);
   Serial.print(F("Unused: "));
   Serial.println(mem_unused());
   Serial.println();
@@ -477,14 +477,14 @@ inline void menu_mem() {
 
 inline void capture_8() {
   uint16_t cnt = MAXCAP - 1;
-  uint8_t  t1,t2;
-  uint8_t  *p  = data+1;
-  
+  uint8_t  t1, t2;
+  uint8_t  *p  = data + 1;
+
   *p  = PINF & 0xF0;
   *p |= *p >> 4;
   // Wait some change
-  while((*p & (mask<<4)) == (PINF & (mask<<4)));
-  
+  while ((*p & (mask << 4)) == (PINF & (mask << 4)));
+
   asm volatile(
     "in   %[T1], %[PF]    \n\t" // CK+1 = 1
     "andi %[T1], 0xF0     \n\t" // CK+1 = 2
@@ -494,44 +494,44 @@ inline void capture_8() {
     "rjmp .+0             \n\t" // CK+2 = 8
 
     "1:                   \n\t"
-    
+
     "in   %[T2], %[PF]    \n\t" // CK+1 = 1
     "andi %[T2], 0xF0     \n\t" // CK+1 = 2
     "or   %[T2], %[T1]    \n\t" // CK+1 = 3
     "st   %a[P]+,%[T2]    \n\t" // CK+2 = 5
     "nop                  \n\t" // CK+1 = 6
     "rjmp .+0             \n\t" // CK+2 = 8
-    
+
     "in   %[T1], %[PF]    \n\t" // CK+1 = 1
     "andi %[T1], 0xF0     \n\t" // CK+1 = 2
     "swap %[T1]           \n\t" // CK+1 = 3
     "nop                  \n\t" // CK+1 = 4
-    
+
     "sbiw %[CNT], 1       \n\t" // CK+2 = 6
     "brne 1b              \n\t" // CK+2 = 8
-    : 
+    :
     : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
-      [CNT]  "w"  (cnt),
-      [P]    "e"  (p),
-      [T1]   "r"  (t1),
-      [T2]   "r"  (t2)
+    [CNT]  "w"  (cnt),
+    [P]    "e"  (p),
+    [T1]   "r"  (t1),
+    [T2]   "r"  (t2)
     :
   );
 }
 
 inline void capture_gt8() {
   uint16_t loops = (clk_div - 8) / 4;
-  
+
   uint16_t nloop;
   uint16_t cnt = MAXCAP - 1;
-  uint8_t  t1,t2;
-  uint8_t  *p  = data+1;
-  
+  uint8_t  t1, t2;
+  uint8_t  *p  = data + 1;
+
   *p  = PINF & 0xF0;
   *p |= *p >> 4;
   // Wait some change
-  while((*p & (mask<<4)) == (PINF & (mask<<4)));
-  
+  while ((*p & (mask << 4)) == (PINF & (mask << 4)));
+
   asm volatile(
     "in   %[T1], %[PF]    \n\t" // CK+1 = 1
     "andi %[T1], 0xF0     \n\t" // CK+1 = 2
@@ -548,21 +548,21 @@ inline void capture_gt8() {
     // CK+4N = 8 + 4N
 
     "1:                   \n\t"
-    
+
     "in   %[T2], %[PF]    \n\t" // CK+1 = 1
     "andi %[T2], 0xF0     \n\t" // CK+1 = 2
     "or   %[T2], %[T1]    \n\t" // CK+1 = 3
     "st   %a[P]+,%[T2]    \n\t" // CK+2 = 5
     "nop                  \n\t" // CK+1 = 6
     "rjmp .+0             \n\t" // CK+2 = 8
-    
+
     // CK + 4N
     "movw %[NT],%[N]      \n\t"
     "2:                   \n\t"
     "sbiw %[NT], 1        \n\t"
     "brne 2b              \n\t"
     // CK+4N = 8 + 4N
-    
+
     "in   %[T1], %[PF]    \n\t" // CK+1 = 1
     "andi %[T1], 0xF0     \n\t" // CK+1 = 2
     "swap %[T1]           \n\t" // CK+1 = 3
@@ -577,41 +577,41 @@ inline void capture_gt8() {
 
     "sbiw %[CNT], 1       \n\t" // CK+2 = 6
     "brne 1b              \n\t" // CK+2 = 8
-    : 
+    :
     : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
-      [CNT]  "w"  (cnt),
-      [P]    "e"  (p),
-      [T1]   "r"  (t1),
-      [T2]   "r"  (t2),
-      [NT]   "w"  (nloop),
-      [N]    "w"  (loops)
+    [CNT]  "w"  (cnt),
+    [P]    "e"  (p),
+    [T1]   "r"  (t1),
+    [T2]   "r"  (t2),
+    [NT]   "w"  (nloop),
+    [N]    "w"  (loops)
     :
   );
 }
 
 inline void do_capture() {
   cli();
-  switch(clk_div) {
+  switch (clk_div) {
     case 8:
-    	capture_8();  // 2MHz
-        break;
+      capture_8();  // 2MHz
+      break;
     default:
-    	capture_gt8(); // <=1MHz
-        break;
+      capture_gt8(); // <=1MHz
+      break;
   }
   sei();
 }
 
 inline void menu_capture() {
   do_capture();
-  
+
   //unsigned long rate = (MAXCAP * 1000000) / time;
-  
+
   //Serial.print(F("Buffer filled in: "));
   //Serial.print(time);
   //Serial.println(F(" us"));
   Serial.print(F("Freq:          "));
-  Serial.print(F_CPU/clk_div);
+  Serial.print(F_CPU / clk_div);
   Serial.println(F(" Hz"));
   //Serial.print(F("Measured Freq: "));
   //Serial.print(rate);
@@ -619,16 +619,16 @@ inline void menu_capture() {
 }
 
 const uint16_t LINESIZE = 64;
-const char GRAPH[] = {'.','+'};
+const char GRAPH[] = {'.', '+'};
 
 inline void menu_show() {
-  int i=0;
-  while(i<MAXCAP) {
-    for(uint8_t s=0;s<4;s++) {
-      if(mask & _BV(s)) {
-        for(int j=0;j<LINESIZE;j++) {
-          Serial.print(GRAPH[(data[i+j]&(0x01 << s)) == 0 ? 0 : 1]);
-          Serial.print(GRAPH[(data[i+j]&(0x10 << s)) == 0 ? 0 : 1]);
+  int i = 0;
+  while (i < MAXCAP) {
+    for (uint8_t s = 0; s < 4; s++) {
+      if (mask & _BV(s)) {
+        for (int j = 0; j < LINESIZE; j++) {
+          Serial.print(GRAPH[(data[i + j] & (0x01 << s)) == 0 ? 0 : 1]);
+          Serial.print(GRAPH[(data[i + j] & (0x10 << s)) == 0 ? 0 : 1]);
         }
         Serial.println();
       }
@@ -640,29 +640,29 @@ inline void menu_show() {
 
 inline void menu_export() {
   char buf[16];
-  
-  int s=1;
-  int i=0;
-  int c=0;
+
+  int s = 1;
+  int i = 0;
+  int c = 0;
   uint8_t last = (data[0] & mask);
-  while(i<MAXCAP) {
-    if(last != (data[i] & mask)) {
+  while (i < MAXCAP) {
+    if (last != (data[i] & mask)) {
       last = (data[i] & mask);
       s++;
     }
     c++;
-    if(last != ((data[i]>>4) & mask)) {
-      last = ((data[i]>>4) & mask);
+    if (last != ((data[i] >> 4) & mask)) {
+      last = ((data[i] >> 4) & mask);
       s++;
     }
     c++;
     i++;
   }
-  
+
   Serial.print(F(";Size: "));
   Serial.println(s);
   Serial.print(F(";Rate: "));
-  Serial.println(F_CPU/clk_div);
+  Serial.println(F_CPU / clk_div);
   Serial.println(F(";Channels: 4"));
   Serial.println(F(";EnabledChannels: 15"));
   Serial.println(F(";TriggerPosition: 0"));
@@ -670,22 +670,22 @@ inline void menu_export() {
   Serial.print(F(";AbsoluteLength: "));
   Serial.println(c);
   Serial.println(F(";CursorEnabled: true"));
-  
-  i=c=0;
+
+  i = c = 0;
   last = (data[0] & mask);
-  sprintf(buf,"%08d@%d",last,0);
+  sprintf(buf, "%08d@%d", last, 0);
   Serial.println(buf);
-  
-  while(i<MAXCAP) {
-    if(last != (data[i] & mask)) {
+
+  while (i < MAXCAP) {
+    if (last != (data[i] & mask)) {
       last = (data[i] & mask);
-      sprintf(buf,"%08d@%d",last,c);
+      sprintf(buf, "%08d@%d", last, c);
       Serial.println(buf);
     }
     c++;
-    if(last != ((data[i]>>4) & mask)) {
-      last = ((data[i]>>4) & mask);
-      sprintf(buf,"%08d@%d",last,c);
+    if (last != ((data[i] >> 4) & mask)) {
+      last = ((data[i] >> 4) & mask);
+      sprintf(buf, "%08d@%d", last, c);
       Serial.println(buf);
     }
     c++;
