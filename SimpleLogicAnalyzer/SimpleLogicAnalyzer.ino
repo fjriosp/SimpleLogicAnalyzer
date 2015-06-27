@@ -2,7 +2,7 @@
 const uint16_t MAXCAP=2048;
 uint8_t data[MAXCAP];
 // Clock Divider
-uint8_t clk_div = 8;
+uint16_t clk_div = 8;
 // Signal mask
 uint8_t mask = 0x0F;
 
@@ -30,6 +30,9 @@ void setup() {
   
   // Used to debug
   pinMode(9,OUTPUT);
+  pinMode(10,OUTPUT);
+  pinMode(5,OUTPUT);
+  pinMode(6,OUTPUT);
   
   cli();
   // Stop timer1
@@ -39,12 +42,13 @@ void setup() {
   TCNT1  = 0;
   OCR1A  = 0;
 
+  // 16MHz / 1 / (39999+1)/ 2 = 200  Hz
   // 16MHz / 1 / (7999+1) / 2 =   1 kHz
   // 16MHz / 1 / (159+1)  / 2 =  50 kHz
   // 16MHz / 1 / (124+1)  / 2 =  64 kHz
   // 16MHz / 1 / (79+1)   / 2 = 100 kHz
   // 16MHz / 1 / (15+1)   / 2 = 500 kHz
-  OCR1A = 7999;
+  OCR1A = 159;
   // Enable timer1
   TCCR1A = _BV(COM1A0)              // Toggle OC1A (pin 9) on Match
          | _BV(WGM11) | _BV(WGM10); // Fast PWM
@@ -157,16 +161,9 @@ void sump_command(uint8_t cmd) {
       divider = divider << 8;
       divider += extCmdBytes[0];
       
-      // rate = 100MHz / (divider + 1)
-      if (divider == 49) {
-	clk_div = 8;
-      }else if (divider == 99) {
-	clk_div = 16;
-      }else if (divider == 199) {
-	clk_div = 32;
-      }else if (divider == 399) {
-	clk_div = 64;
-      }
+      // rate = 16MHz / (divider + 1)
+      clk_div = divider+1;
+      
       break;
     case SUMP_SET_READ_DELAY_COUNT:
       /* UNSUPPORTED
@@ -480,33 +477,34 @@ inline void menu_mem() {
 
 inline void capture_8() {
   uint16_t cnt = MAXCAP - 1;
+  uint8_t  t1,t2;
   uint8_t  *p  = data+1;
   
-  data[0]  = PINF & 0xF0;
-  data[0] |= data[0] >> 4;
+  *p  = PINF & 0xF0;
+  *p |= *p >> 4;
   // Wait some change
-  while((data[0] & (mask<<4)) == (PINF & (mask<<4)));
+  while((*p & (mask<<4)) == (PINF & (mask<<4)));
   
   asm volatile(
-    "in   r16, %[PF]      \n\t" // CK+1 = 1
-    "andi r16, 0xF0       \n\t" // CK+1 = 2
-    "swap r16             \n\t" // CK+1 = 3
+    "in   %[T1], %[PF]    \n\t" // CK+1 = 1
+    "andi %[T1], 0xF0     \n\t" // CK+1 = 2
+    "swap %[T1]           \n\t" // CK+1 = 3
     "nop                  \n\t" // CK+1 = 4
     "rjmp .+0             \n\t" // CK+2 = 6
     "rjmp .+0             \n\t" // CK+2 = 8
 
     "1:                   \n\t"
     
-    "in   r17, %[PF]      \n\t" // CK+1 = 1
-    "andi r17, 0xF0       \n\t" // CK+1 = 2
-    "or   r17, r16        \n\t" // CK+1 = 3
-    "st   x+,  r17        \n\t" // CK+2 = 5
+    "in   %[T2], %[PF]    \n\t" // CK+1 = 1
+    "andi %[T2], 0xF0     \n\t" // CK+1 = 2
+    "or   %[T2], %[T1]    \n\t" // CK+1 = 3
+    "st   %a[P]+,%[T2]    \n\t" // CK+2 = 5
     "nop                  \n\t" // CK+1 = 6
     "rjmp .+0             \n\t" // CK+2 = 8
     
-    "in   r16, %[PF]      \n\t" // CK+1 = 1
-    "andi r16, 0xF0       \n\t" // CK+1 = 2
-    "swap r16             \n\t" // CK+1 = 3
+    "in   %[T1], %[PF]    \n\t" // CK+1 = 1
+    "andi %[T1], 0xF0     \n\t" // CK+1 = 2
+    "swap %[T1]           \n\t" // CK+1 = 3
     "nop                  \n\t" // CK+1 = 4
     
     "sbiw %[CNT], 1       \n\t" // CK+2 = 6
@@ -514,173 +512,80 @@ inline void capture_8() {
     : 
     : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
       [CNT]  "w"  (cnt),
-      [DATA] "x"  (p)
-    : "r16","r17"
+      [P]    "e"  (p),
+      [T1]   "r"  (t1),
+      [T2]   "r"  (t2)
+    :
   );
 }
 
-inline void capture_16() {
+inline void capture_gt8() {
+  uint16_t loops = (clk_div - 8) / 4;
+  
+  uint16_t nloop;
   uint16_t cnt = MAXCAP - 1;
+  uint8_t  t1,t2;
   uint8_t  *p  = data+1;
   
-  data[0]  = PINF & 0xF0;
-  data[0] |= data[0] >> 4;
+  *p  = PINF & 0xF0;
+  *p |= *p >> 4;
   // Wait some change
-  while((data[0] & (mask<<4)) == (PINF & (mask<<4)));
+  while((*p & (mask<<4)) == (PINF & (mask<<4)));
   
   asm volatile(
-    "in   r16, %[PF]      \n\t" // CK+1 = 1
-    "andi r16, 0xF0       \n\t" // CK+1 = 2
-    "swap r16             \n\t" // CK+1 = 3
-    
-    // 3*4 = 12 CK
-    "ldi  r18, 4          \n\t"
-    "2:                   \n\t"
-    "dec  r18             \n\t"
-    "brne 2b              \n\t" // CK+12 = 15
-    "nop                  \n\t" // CK+1  = 16
-  
-    "1:                   \n\t"
-    
-    "in   r17, %[PF]      \n\t" // CK+1 = 1
-    "andi r17, 0xF0       \n\t" // CK+1 = 2
-    "or   r17, r16        \n\t" // CK+1 = 3
-    "st   x+,  r17        \n\t" // CK+2 = 5
-    
-    // 3*3 = 9 CK
-    "ldi  r18, 3          \n\t"
-    "2:                   \n\t"
-    "dec  r18             \n\t"
-    "brne 2b              \n\t" // CK+9 = 14
-    "rjmp .+0             \n\t" // CK+2 = 16
-    
-    "in   r16, %[PF]      \n\t" // CK+1 = 1
-    "andi r16, 0xF0       \n\t" // CK+1 = 2
-    "swap r16             \n\t" // CK+1 = 3
-    
-    // 3*3 = 9 CK
-    "ldi  r18, 3          \n\t"
-    "2:                   \n\t"
-    "dec  r18             \n\t"
-    "brne 2b              \n\t" // CK+9 = 12
-    
-    "sbiw %[CNT], 1       \n\t" // CK+2 = 14
-    "brne 1b              \n\t" // CK+2 = 16
-    : 
-    : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
-      [CNT]  "w"  (cnt),
-      [DATA] "x"  (p)
-    : "r16","r17","r18"
-  );
-}
+    "in   %[T1], %[PF]    \n\t" // CK+1 = 1
+    "andi %[T1], 0xF0     \n\t" // CK+1 = 2
+    "swap %[T1]           \n\t" // CK+1 = 3
+    "nop                  \n\t" // CK+1 = 4
+    "rjmp .+0             \n\t" // CK+2 = 6
+    "rjmp .+0             \n\t" // CK+2 = 8
 
-inline void capture_32() {
-  uint16_t cnt = MAXCAP - 1;
-  uint8_t  *p  = data+1;
-  
-  data[0]  = PINF & 0xF0;
-  data[0] |= data[0] >> 4;
-  // Wait some change
-  while((data[0] & (mask<<4)) == (PINF & (mask<<4)));
-  
-  asm volatile(
-    "in   r16, %[PF]      \n\t" // CK+1 = 1
-    "andi r16, 0xF0       \n\t" // CK+1 = 2
-    "swap r16             \n\t" // CK+1 = 3
-    
-    // 3*9 = 27 CK
-    "ldi  r18, 9          \n\t"
+    // CK + 4N
+    "movw %[NT],%[N]      \n\t"
     "2:                   \n\t"
-    "dec  r18             \n\t"
-    "brne 2b              \n\t" // CK+27 = 30
-    "rjmp .+0             \n\t" // CK+2  = 32
-    
-    "1:                   \n\t"
-    
-    "in   r17, %[PF]      \n\t" // CK+1 = 1
-    "andi r17, 0xF0       \n\t" // CK+1 = 2
-    "or   r17, r16        \n\t" // CK+1 = 3
-    "st   x+,  r17        \n\t" // CK+2 = 5
-    
-    // 3*9 = 27 CK
-    "ldi  r18, 9          \n\t"
-    "2:                   \n\t"
-    "dec  r18             \n\t"
-    "brne 2b              \n\t" // CK+27 = 32
-    
-    "in   r16, %[PF]      \n\t" // CK+1 = 1
-    "andi r16, 0xF0       \n\t" // CK+1 = 2
-    "swap r16             \n\t" // CK+1 = 3
-    
-    // 3*8 = 24 CK
-    "ldi  r18, 8          \n\t"
-    "2:                   \n\t"
-    "dec  r18             \n\t"
-    "brne 2b              \n\t" // CK+24 = 27
-    "nop                  \n\t" // CK+1  = 28
-    
-    "sbiw %[CNT], 1       \n\t" // CK+2 = 30
-    "brne 1b              \n\t" // CK+2 = 32
-    : 
-    : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
-      [CNT]  "w"  (cnt),
-      [DATA] "x"  (p)
-    : "r16","r17","r18"
-  );
-}
+    "sbiw %[NT], 1        \n\t"
+    "brne 2b              \n\t"
+    // CK+4N = 8 + 4N
 
-inline void capture_64() {
-  uint16_t cnt = MAXCAP - 1;
-  uint8_t  *p  = data+1;
-  
-  data[0]  = PINF & 0xF0;
-  data[0] |= data[0] >> 4;
-  // Wait some change
-  while((data[0] & (mask<<4)) == (PINF & (mask<<4)));
-  
-  asm volatile(
-    "in   r16, %[PF]      \n\t" // CK+1 = 1
-    "andi r16, 0xF0       \n\t" // CK+1 = 2
-    "swap r16             \n\t" // CK+1 = 3
-    
-    // 3*20 = 60 CK     
-    "ldi  r18, 20         \n\t"
-    "2:                   \n\t"
-    "dec  r18             \n\t"
-    "brne 2b              \n\t" // CK+60 = 63
-    "nop                  \n\t" // CK+1  = 64
-    
     "1:                   \n\t"
     
-    "in   r17, %[PF]      \n\t" // CK+1 = 1
-    "andi r17, 0xF0       \n\t" // CK+1 = 2
-    "or   r17, r16        \n\t" // CK+1 = 3
-    "st   x+,  r17        \n\t" // CK+2 = 5
+    "in   %[T2], %[PF]    \n\t" // CK+1 = 1
+    "andi %[T2], 0xF0     \n\t" // CK+1 = 2
+    "or   %[T2], %[T1]    \n\t" // CK+1 = 3
+    "st   %a[P]+,%[T2]    \n\t" // CK+2 = 5
+    "nop                  \n\t" // CK+1 = 6
+    "rjmp .+0             \n\t" // CK+2 = 8
     
-    // 3*19 = 57 CK
-    "ldi  r18, 19         \n\t"
+    // CK + 4N
+    "movw %[NT],%[N]      \n\t"
     "2:                   \n\t"
-    "dec  r18             \n\t"
-    "brne 2b              \n\t" // CK+57 = 62
-    "rjmp .+0             \n\t" // CK+2  = 64
+    "sbiw %[NT], 1        \n\t"
+    "brne 2b              \n\t"
+    // CK+4N = 8 + 4N
     
-    "in   r16, %[PF]      \n\t" // CK+1 = 1
-    "andi r16, 0xF0       \n\t" // CK+1 = 2
-    "swap r16             \n\t" // CK+1 = 3
-    
-    // 3*19 = 57 CK
-    "ldi  r18, 19         \n\t"
+    "in   %[T1], %[PF]    \n\t" // CK+1 = 1
+    "andi %[T1], 0xF0     \n\t" // CK+1 = 2
+    "swap %[T1]           \n\t" // CK+1 = 3
+    "nop                  \n\t" // CK+1 = 4
+
+    // CK + 4N
+    "movw %[NT],%[N]      \n\t"
     "2:                   \n\t"
-    "dec  r18             \n\t"
-    "brne 2b              \n\t" // CK+57 = 60
-    
-    "sbiw %[CNT], 1       \n\t" // CK+2 = 62
-    "brne 1b              \n\t" // CK+2 = 64
+    "sbiw %[NT], 1        \n\t"
+    "brne 2b              \n\t"
+    // CK+4N = 8 + 4N
+
+    "sbiw %[CNT], 1       \n\t" // CK+2 = 6
+    "brne 1b              \n\t" // CK+2 = 8
     : 
     : [PF]   "I"  (_SFR_IO_ADDR (PINF)),
       [CNT]  "w"  (cnt),
-      [DATA] "x"  (p)
-    : "r16","r17","r18"
+      [P]    "e"  (p),
+      [T1]   "r"  (t1),
+      [T2]   "r"  (t2),
+      [NT]   "w"  (nloop),
+      [N]    "w"  (loops)
+    :
   );
 }
 
@@ -690,14 +595,8 @@ inline void do_capture() {
     case 8:
     	capture_8();  // 2MHz
         break;
-    case 16:
-    	capture_16(); // 1MHz
-        break;
-    case 32:
-    	capture_32(); // 500kHz
-        break;
-    case 64:
-    	capture_64(); // 250kHz
+    default:
+    	capture_gt8(); // <=1MHz
         break;
   }
   sei();
