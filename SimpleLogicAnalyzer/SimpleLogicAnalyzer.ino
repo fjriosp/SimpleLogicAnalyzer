@@ -192,20 +192,19 @@ void sump_command(uint8_t cmd) {
       delay(10);
       /* device name */
       Serial.write((uint8_t)0x01);
-      Serial.write('A');
-      Serial.write('G');
+      Serial.write('S');
       Serial.write('L');
       Serial.write('A');
       Serial.write('v');
-      Serial.write('0');
+      Serial.write('1');
       Serial.write((uint8_t)0x00);
 
       /* firmware version */
       Serial.write((uint8_t)0x02);
-      Serial.write('0');
-      Serial.write('.');
       Serial.write('1');
-      Serial.write('4');
+      Serial.write('.');
+      Serial.write('0');
+      Serial.write('0');
       Serial.write((uint8_t)0x00);
 
       /* sample memory */
