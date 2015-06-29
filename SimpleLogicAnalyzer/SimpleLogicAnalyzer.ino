@@ -480,10 +480,10 @@ inline void capture_8() {
   uint8_t  t1, t2;
   uint8_t  *p  = data + 1;
 
-  *p  = PINF & 0xF0;
-  *p |= *p >> 4;
+  data[0]  = PINF & 0xF0;
+  data[0] |= data[0] >> 4;
   // Wait some change
-  while ((*p & (mask << 4)) == (PINF & (mask << 4)));
+  while ((data[0] & (mask << 4)) == (PINF & (mask << 4)));
 
   asm volatile(
     "in   %[T1], %[PF]    \n\t" // CK+1 = 1
@@ -527,10 +527,10 @@ inline void capture_gt8() {
   uint8_t  t1, t2;
   uint8_t  *p  = data + 1;
 
-  *p  = PINF & 0xF0;
-  *p |= *p >> 4;
+  data[0]  = PINF & 0xF0;
+  data[0] |= data[0] >> 4;
   // Wait some change
-  while ((*p & (mask << 4)) == (PINF & (mask << 4)));
+  while ((data[0] & (mask << 4)) == (PINF & (mask << 4)));
 
   asm volatile(
     "in   %[T1], %[PF]    \n\t" // CK+1 = 1
